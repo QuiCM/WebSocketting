@@ -8,6 +8,9 @@ using System.Threading.Tasks;
 
 namespace WebSocketting
 {
+	/// <summary>
+	/// Represents a Websocket connection
+	/// </summary>
 	public class WSocket : IDisposable
 	{
 		private Uri _uri;
@@ -49,17 +52,34 @@ namespace WebSocketting
 			}
 		}
 
+		/// <summary>
+		/// Asynchronously closes a connection with a websocket
+		/// </summary>
+		/// <param name="reason"></param>
+		/// <returns></returns>
 		public async Task CloseAsync(string reason)
 		{
 			await _sock.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, _token);
 			_sock.Dispose();
 		}
 
+		/// <summary>
+		/// Asynchronously sends a message to a websocket
+		/// </summary>
+		/// <param name="msg"></param>
+		/// <returns></returns>
 		public async Task SendAsync(string msg)
 		{
 			await SendBytesAsync(Encoding.UTF8.GetBytes(msg));
 		}
 
+		/// <summary>
+		/// Asynchronously sends binary data to a websocket
+		/// </summary>
+		/// <param name="data"></param>
+		/// <param name="finalMsg"></param>
+		/// <param name="isText"></param>
+		/// <returns></returns>
 		public async Task SendBytesAsync(byte[] data, bool finalMsg = true, bool isText = true)
 		{
 			ArraySegment<byte> buf = new ArraySegment<byte>(data);
@@ -79,11 +99,13 @@ namespace WebSocketting
 			if (res.MessageType == WebSocketMessageType.Close)
 			{
 				Disconnected?.Invoke(this, null);
+				await _sock.CloseAsync(res.CloseStatus.Value, res.CloseStatusDescription, _token);
 				return;
 			}
 
 			if (!res.EndOfMessage)
 			{
+				//if we have only read some of the data, store what we've got so far
 				_queue.Add(buf);
 				return;
 			}
@@ -91,6 +113,7 @@ namespace WebSocketting
 			byte[] send;
 			if (_queue.Count != 0)
 			{
+				//Concat all the buffered data into one array
 				send = _queue.SelectMany(q => q.Array).Concat(buf.Array).ToArray();
 				_queue.Clear();
 			}
@@ -101,6 +124,7 @@ namespace WebSocketting
 
 			if (res.MessageType == WebSocketMessageType.Binary)
 			{
+				//Send raw binary data
 				ReceivedBinaryMessage?.Invoke(
 					this,
 					new MessageEventArgs<byte[]>(send)
@@ -108,6 +132,7 @@ namespace WebSocketting
 			}
 			else
 			{
+				//Send a string
 				string s = Encoding.UTF8.GetString(send).Replace("\0", "");
 				ReceivedTextMessage?.Invoke(
 					this,
