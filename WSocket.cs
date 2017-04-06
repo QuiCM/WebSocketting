@@ -17,8 +17,8 @@ namespace WebSocketting
 		private ClientWebSocket _sock = new ClientWebSocket();
 		private CancellationToken _token;
 		private bool _closing;
-		private ConcurrentQueue<ArraySegment<byte>> _readQueue = new ConcurrentQueue<ArraySegment<byte>>();
-		private ConcurrentQueue<byte[]> _sendQueue = new ConcurrentQueue<byte[]>();
+		private Queue<ArraySegment<byte>> _readQueue = new Queue<ArraySegment<byte>>();
+		private Queue<byte[]> _sendQueue = new Queue<byte[]>();
 
 		/// <summary>
 		/// Invoked when a text message is received
@@ -163,11 +163,8 @@ namespace WebSocketting
 			{
 				return;
 			}
-			
-			if (!_sendQueue.TryDequeue(out byte[] data))
-			{
-				return;
-			}
+
+			byte[] data = _sendQueue.Dequeue();
 
 			ArraySegment<byte> buf = new ArraySegment<byte>(data);
 			await _sock.SendAsync(
@@ -199,20 +196,12 @@ namespace WebSocketting
 			}
 
 			List<byte> send = new List<byte>();
-			if (_readQueue.Count != 0)
+			while (_readQueue.Count != 0)
 			{
 				//Push all the buffered data into a list
-				while (_readQueue.TryDequeue(out ArraySegment<byte> bytes))
-				{
-					send.AddRange(bytes.Array);
-				}
-
-				send.AddRange(buf.Array);
+				send.AddRange(_readQueue.Dequeue().Array);
 			}
-			else
-			{
-				send.AddRange(buf.Array);
-			}
+			send.AddRange(buf.Array);
 
 			if (res.MessageType == WebSocketMessageType.Binary)
 			{
