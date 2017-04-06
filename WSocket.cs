@@ -19,6 +19,9 @@ namespace WebSocketting
 		private bool _closing;
 		private Queue<ArraySegment<byte>> _readQueue = new Queue<ArraySegment<byte>>();
 		private Queue<byte[]> _sendQueue = new Queue<byte[]>();
+		//These semaphores enforce 1 read and write op at a time, as required for a ClientWebSocket
+		private SemaphoreSlim _readSemaphore = new SemaphoreSlim(1, 1);
+		private SemaphoreSlim _writeSemaphore = new SemaphoreSlim(1, 1);
 
 		/// <summary>
 		/// Invoked when a text message is received
@@ -94,6 +97,7 @@ namespace WebSocketting
 				{
 					try
 					{
+						await _writeSemaphore.WaitAsync(_token);
 						await ProcessSendQueueAsync();
 						await Task.Delay(10);
 					}
@@ -101,6 +105,10 @@ namespace WebSocketting
 					{
 						//Temp
 						Console.WriteLine(ex);
+					}
+					finally
+					{
+						_writeSemaphore.Release();
 					}
 				}
 			}
@@ -119,12 +127,17 @@ namespace WebSocketting
 				{
 					try
 					{
+						await _readSemaphore.WaitAsync(_token);
 						await ProcessReadQueueAsync();
 					}
 					catch (Exception ex)
 					{
 						//Temp
 						Console.WriteLine(ex);
+					}
+					finally
+					{
+						_readSemaphore.Release();
 					}
 				}
 			}
