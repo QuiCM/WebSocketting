@@ -1,10 +1,10 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Utilities;
 
 namespace WebSocketting
 {
@@ -73,6 +73,11 @@ namespace WebSocketting
 		{
 			//Allow re-use of this WSocket
 			_closing = false;
+			if (_sock.State == WebSocketState.Open)
+			{
+				return;
+			}
+
 			await _sock.ConnectAsync(_uri, _token);
 
 			Connected?.Invoke(this, null);
@@ -156,7 +161,15 @@ namespace WebSocketting
 			}
 
 			_closing = true;
-			await _sock.CloseAsync(status, reason, _token).ConfigureAwait(false);
+			try
+			{
+				await _sock.CloseAsync(status, reason, _token).ConfigureAwait(false);
+			}
+			catch(Exception ex)
+			{
+				//temp
+				Console.WriteLine(ex);
+			}
 			Disconnected?.Invoke(this, new DisconnectEventArgs(status, reason));
 		}
 
@@ -178,19 +191,33 @@ namespace WebSocketting
 			}
 
 			byte[] data = _sendQueue.Dequeue();
-
 			ArraySegment<byte> buf = new ArraySegment<byte>(data);
-			await _sock.SendAsync(
-				buf,
-				WebSocketMessageType.Text,
-				true,
-				_token).ConfigureAwait(false);
+
+			if (_sock.State == WebSocketState.Open && !_token.IsCancellationRequested)
+			{
+				await _sock.SendAsync(
+					buf,
+					WebSocketMessageType.Text,
+					true,
+					_token).ConfigureAwait(false);
+			}
 		}
 
 		private async Task ProcessReadQueueAsync()
 		{
+			WebSocketReceiveResult res;
 			ArraySegment<byte> buf = new ArraySegment<byte>(new byte[1024]);
-			WebSocketReceiveResult res = await _sock.ReceiveAsync(buf, _token).ConfigureAwait(false);
+			try
+			{
+				res = await _sock.ReceiveAsync(buf, _token).ConfigureAwait(false);
+			}
+			catch (WebSocketException ex)
+			{
+				//temp
+				Console.WriteLine(ex);
+				await CloseAsync(WebSocketCloseStatus.ProtocolError, $"{ex.WebSocketErrorCode}: {ex.BuildErrorString()}");
+				return;
+			}
 
 			if (res.MessageType == WebSocketMessageType.Close)
 			{
