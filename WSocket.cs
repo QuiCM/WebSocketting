@@ -83,8 +83,8 @@ namespace WebSocketting
 
             Connected?.Invoke(this, null);
 
-            Thread read = new Thread(ReadThread);
-            Thread send = new Thread(SendThread);
+            Thread read = new Thread(async () => await ReadThread());
+            Thread send = new Thread(async () => await SendThread());
 
             read.Start();
             send.Start();
@@ -126,7 +126,7 @@ namespace WebSocketting
             _mre.Set();
         }
 
-        private async void SendThread()
+        private async Task SendThread()
         {
 
             while (!_token.IsCancellationRequested)
@@ -148,7 +148,7 @@ namespace WebSocketting
             }
         }
 
-        private async void ReadThread()
+        private async Task ReadThread()
         {
             while (!_token.IsCancellationRequested)
             {
