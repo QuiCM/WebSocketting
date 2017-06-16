@@ -83,8 +83,8 @@ namespace WebSocketting
 
             Connected?.Invoke(this, null);
 
-            Thread read = new Thread(async () => await ReadThread());
-            Thread send = new Thread(async () => await SendThread());
+            Thread read = new Thread(ReadThread);
+            Thread send = new Thread(SendThread);
 
             read.Start();
             send.Start();
@@ -126,9 +126,8 @@ namespace WebSocketting
             _mre.Set();
         }
 
-        private async Task SendThread()
+        private async void SendThread()
         {
-
             while (!_token.IsCancellationRequested)
             {
                 if (!_mre.WaitOne(100))
@@ -143,12 +142,19 @@ namespace WebSocketting
 
                 if (_sock?.State == WebSocketState.Open)
                 {
+                    if (!_writeSemaphore.Wait(100))
+                    {
+                        continue;
+                    }
+
                     await ProcessSendQueueAsync();
+
+                    _writeSemaphore.Release();
                 }
             }
         }
 
-        private async Task ReadThread()
+        private async void ReadThread()
         {
             while (!_token.IsCancellationRequested)
             {
@@ -169,7 +175,6 @@ namespace WebSocketting
         {
             try
             {
-                await _writeSemaphore.WaitAsync(_token);
                 if (_sendQueue.Count == 0)
                 {
                     _mre.Reset();
@@ -192,11 +197,8 @@ namespace WebSocketting
             {
                 Console.WriteLine(e);
             }
-            finally
-            {
-                _writeSemaphore.Release();
-                _mre.Set();
-            }
+
+            _mre.Set();
         }
 
         private async Task ProcessReadQueueAsync()
