@@ -28,13 +28,11 @@ namespace WebSocketting
 	/// </summary>
 	public class StringMessageEventArgs : MessageEventArgs<string>
 	{
-		/// <summary>
-		/// Creates a new instance of <see cref="StringMessageEventArgs"/> with the provided data
-		/// </summary>
-		/// <param name="data"></param>
-		public StringMessageEventArgs(string data) : base(data)
-		{
-		}
+        /// <summary>
+        /// Creates a new instance of <see cref="StringMessageEventArgs"/> with the provided data
+        /// </summary>
+        /// <param name="data"></param>
+        public StringMessageEventArgs(string data) : base(data) { }
 	}
 
 	/// <summary>
@@ -42,12 +40,10 @@ namespace WebSocketting
 	/// </summary>
 	public class BinaryMessageEventArgs : MessageEventArgs<byte[]>
 	{
-		/// <summary>
-		/// Creates a new instance of <see cref="BinaryMessageEventArgs"/> with the provided data
-		/// </summary>
-		/// <param name="data"></param>
-		public BinaryMessageEventArgs(byte[] data) : base(data)
-		{
-		}
+        /// <summary>
+        /// Creates a new instance of <see cref="BinaryMessageEventArgs"/> with the provided data
+        /// </summary>
+        /// <param name="data"></param>
+        public BinaryMessageEventArgs(byte[] data) : base(data) { }
 	}
 }
