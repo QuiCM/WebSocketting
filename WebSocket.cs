@@ -78,17 +78,22 @@ namespace WebSocketting
         }
 
         /// <summary>
-        /// Asynchronously connects to the WebSocket. This is a blocking method
+        /// Asynchronously connects to the WebSocket.
         /// </summary>
         /// <returns></returns>
         public async Task ConnectAsync(CancellationToken ct)
         {
             await ((ClientWebSocket)_ws).ConnectAsync(_uri, ct); //non-blocking
-
+            
             Task read = ReadLoopAsync(ct);
             Task write = WriteLoopAsync(ct);
 
-            Task.WaitAny(new Task[] { read, write }, ct);
+            await Task.Factory.StartNew(
+                () => Task.WaitAny(new Task[] { read, write }, ct),
+                ct, 
+                TaskCreationOptions.LongRunning, 
+                Task.Factory.Scheduler
+            );
 
             if (read.Exception != null)
             {
