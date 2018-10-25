@@ -80,30 +80,37 @@ namespace WebSocketting
         /// <summary>
         /// Asynchronously connects to the WebSocket.
         /// </summary>
-        /// <returns></returns>
-        public async Task ConnectAsync(CancellationToken ct)
+        /// <returns>The Task running the WebSocket's read and write loops. Awaiting this Task will block until the WebSocket connection
+        /// is closed</returns>
+        public async Task<Task> ConnectAsync(CancellationToken ct)
         {
             await ((ClientWebSocket)_ws).ConnectAsync(_uri, ct); //non-blocking
             
-            Task read = ReadLoopAsync(ct);
-            Task write = WriteLoopAsync(ct);
+            //readLoop task will throw an OperationCanceledException if it completes, cancelling the write loop.
+            Task readLoop = ReadLoopAsync(ct).ContinueWith(t => 
+            { 
+                if (!ct.IsCancellationRequested) 
+                    throw new OperationCanceledException("Read loop completed.", null, ct); 
+            });
 
-            await Task.Factory.StartNew(
-                () => Task.WaitAny(new Task[] { read, write }, ct),
+            //writeLoop task will throw an OperationCanceledException if it completes, cancelling the read loop.
+            Task writeLoop = WriteLoopAsync(ct).ContinueWith(t =>
+            {
+                if (!ct.IsCancellationRequested)
+                    throw new OperationCanceledException("Write loop completed.", null, ct); 
+            });
+
+            //Start a new task that will run the Read and Write loops.
+            //This task is non-blocking and will complete when the Read and Write loops completes.
+            //Due to the continuations above, if either loop completes it should cancel the other, causing this task to complete
+            Task connectionTask = await Task.Factory.StartNew(
+                () => Task.WhenAll(readLoop, writeLoop),
                 ct, 
                 TaskCreationOptions.LongRunning, 
-                Task.Factory.Scheduler
-            );
+                TaskScheduler.Default
+            ); //non-blocking
 
-            if (read.Exception != null)
-            {
-                throw read.Exception;
-            }
-
-            if (write.Exception != null)
-            {
-                throw write.Exception;
-            }
+            return connectionTask;
         }
 
         /// <summary>
