@@ -26,6 +26,15 @@ namespace WebSocketting
         /// Connection options on the socket to be connected to
         /// </summary>
         public ClientWebSocketOptions ConnectionOptions => ((ClientWebSocket)_ws).Options;
+        /// <summary>
+        /// Event invoked when the Websocket is using <see cref="WebSocketMessageType.Text"/> and a message is received
+        /// </summary>
+        public event EventHandler<StringMessageEventArgs> OnTextMessage;
+
+        /// <summary>
+        /// Event invoked when the Websocket is using <see cref="WebSocketMessageType.Binary"/> and a message is received
+        /// </summary>
+        public event EventHandler<BinaryMessageEventArgs> OnBinaryMessage;
 
         private readonly WebSocketMessageType _msgType;
         private readonly Uri _uri;
@@ -164,12 +173,12 @@ namespace WebSocketting
 
                 if (res.MessageType == WebSocketMessageType.Binary)
                 {
-                    //event for binary
+                    OnBinaryMessage?.Invoke(this, new BinaryMessageEventArgs(msg.ToArray()));
                 }
                 else
                 {
                     string strMsg = Encoding.UTF8.GetString(msg.ToArray());
-                    //event for string
+                    OnTextMessage?.Invoke(this, new StringMessageEventArgs(strMsg));
                 }
             }
         }
