@@ -22,6 +22,10 @@ namespace WebSocketting
         //A SemaphoreSlim is used to provide this restriction
 
         internal System.Net.WebSockets.WebSocket _ws;
+        /// <summary>
+        /// Connection options on the socket to be connected to
+        /// </summary>
+        public ClientWebSocketOptions ConnectionOptions => ((ClientWebSocket)_ws).Options;
 
         private readonly WebSocketMessageType _msgType;
         private readonly Uri _uri;
@@ -38,8 +42,8 @@ namespace WebSocketting
         /// <param name="address"></param>
         /// <param name="msgType"></param>
         /// <param name="tokenSource"></param>
-        public WebSocket(string address, WebSocketMessageEncoding msgType)
-            : this(new Uri(address), msgType) { }
+        public WebSocket(string address, WebSocketMessageEncoding msgType, System.Net.IWebProxy proxy)
+            : this(new Uri(address), msgType, proxy) { }
 
         /// <summary>
         /// Constructs a new WebSocket that will connect to the provided URI and read messages in the provided format.
@@ -48,9 +52,10 @@ namespace WebSocketting
         /// <param name="address"></param>
         /// <param name="msgType"></param>
         /// <param name="tokenSource"></param>
-        public WebSocket(Uri address, WebSocketMessageEncoding msgType)
+        public WebSocket(Uri address, WebSocketMessageEncoding msgType, System.Net.IWebProxy proxy)
         {
             _ws = new ClientWebSocket();
+            (_ws as ClientWebSocket).Options.Proxy = proxy;
             _msgType = (WebSocketMessageType)msgType;
             _uri = address;
 
