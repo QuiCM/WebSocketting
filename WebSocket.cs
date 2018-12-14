@@ -1,6 +1,9 @@
-﻿using System;
+﻿#define TRACE
+
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
@@ -9,7 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 //Allow unit tests to access internals
-[assembly: InternalsVisibleTo("Testing")]
+[assembly: InternalsVisibleTo("Testing")]   
 
 namespace WebSocketting
 {
@@ -37,12 +40,6 @@ namespace WebSocketting
         /// </summary>
         public event EventHandler<BinaryMessageEventArgs> OnBinaryMessage;
 
-        /// <summary>
-        /// Optional Action used to log messages if the LOG_WS preprocessor directive is defined.
-        /// Logs to console by default.
-        /// </summary>
-        public Action<string, int> Logger { get; set; } = (s, i) => { Console.WriteLine("$[Severity {i}] [[Websocket]] {s}"); };
-
         private readonly WebSocketMessageType _msgType;
         private readonly Uri _uri;
 
@@ -52,16 +49,20 @@ namespace WebSocketting
         private SemaphoreSlim _sem;
         private bool _disconnecting;
 
-        private void ConditionalLog(string msg, int level)
+#if NETFRAMEWORK
+        //DotNet Core & Standard do not currently support configuring a TraceSource from a configuration file
+        //This means that TraceSource will use a DefaultTraceListener and output to the default location.
+        //Until this is fixed we'll just use Trace.WriteLine and people can add their own listeners to Trace programmatically.
+        //Unfortunately ConsoleTraceListener doesn't exist in NetCore 2.0 so we can't even use that
+        static TraceSource _ts = new TraceSource("WebSocket");
+#endif
+
+        private void TraceEvent(string msg, int identifier, TraceEventType level)
         {
-            //0 - information
-            //1 - system information
-            //2 - system state change information
-            //3 - cancellation
-            //4 - TBA
-            //5 - exception
-#if LOG_WS
-            Logger(msg, level);
+#if NETSTANDARD || NETCORE
+            Trace.WriteLine(msg, "WebSocket");
+#else
+            _ts.TraceEvent(level, identifier, msg);
 #endif
         }
 
@@ -102,7 +103,7 @@ namespace WebSocketting
         /// <param name="message"></param>
         public void Send(string message)
         {
-            ConditionalLog($"(Send) Message queued [ msg: {message} ]", 0);
+            TraceEvent($"(Send) Message queued [ msg: {message} ]", EventIdentifiers.WS_VER_QMSG, TraceEventType.Verbose);
             Send(Encoding.UTF8.GetBytes(message));
         }
 
@@ -112,7 +113,7 @@ namespace WebSocketting
         /// <param name="bytes"></param>
         public void Send(byte[] bytes)
         {
-            ConditionalLog($"(Send) Queued bytes [ len: {bytes.Length} ]", 0);
+            TraceEvent($"(Send) Queued bytes [ len: {bytes.Length} ]", EventIdentifiers.WS_VER_QBYTES, TraceEventType.Verbose);
             _sQ.Enqueue(bytes);
         }
 
@@ -124,7 +125,7 @@ namespace WebSocketting
         /// <returns></returns>
         public async Task<SendResult> SendAsync(string message, CancellationToken ct)
         {
-            ConditionalLog($"(SendAsync) Message queued [ msg: {message} ]", 0);
+            TraceEvent($"(SendAsync) Message queued [ msg: {message} ]", EventIdentifiers.WS_VER_QMSG_ASYNC, TraceEventType.Verbose);
             return await SendAsync(Encoding.UTF8.GetBytes(message), ct);
         }
 
@@ -138,11 +139,15 @@ namespace WebSocketting
         {
             if (_ws.State != WebSocketState.Open)
             {
-                ConditionalLog($"(SendAsync) Invalid attempt to send while socket is not open", 5);
+                TraceEvent(
+                    $"(SendAsync) Invalid attempt to send while socket is not open",
+                    EventIdentifiers.WS_ERR_SEND_SOCK_CLOSE,
+                    TraceEventType.Error
+                );
                 throw new InvalidOperationException("Websocket is not open");
             }
 
-            ConditionalLog($"(SendAsync) Queued bytes [ len: {bytes.Length} ]", 0);
+            TraceEvent($"(SendAsync) Queued bytes [ len: {bytes.Length} ]", EventIdentifiers.WS_VER_QMSG_ASYNC, TraceEventType.Verbose);
             ArraySegment<byte> buf = new ArraySegment<byte>(bytes);
 
             await _sem.WaitAsync(ct);
@@ -150,7 +155,7 @@ namespace WebSocketting
             if (ct.IsCancellationRequested)
             {
                 _sem.Release();
-                ConditionalLog($"(SendAsync) Operation cancelled", 3);
+                TraceEvent($"(SendAsync) Operation cancelled", EventIdentifiers.WS_WAR_CANC_SEND, TraceEventType.Warning);
                 return SendResult.Cancellation;
             }
 
@@ -168,12 +173,15 @@ namespace WebSocketting
         {
             if (_ws.State == WebSocketState.Open || _ws.State == WebSocketState.Connecting)
             {
-                ConditionalLog($"(ConnectAsync) Connect attempt ignored as connection is already established", 1);
+                TraceEvent($"(ConnectAsync) Connect attempt ignored as connection is already established",
+                    EventIdentifiers.WS_VER_CONN_ALR_OPEN,
+                    TraceEventType.Information
+                );
                 return;
             }
 
             await ((ClientWebSocket)_ws).ConnectAsync(_uri, ct); //non-blocking
-            ConditionalLog("(ConnectAsync) Socket connected", 2);
+            TraceEvent("(ConnectAsync) Socket connected", EventIdentifiers.WS_INF_CONN_OPEN, TraceEventType.Information);
         }
 
         public async Task<Task<ConnectionResult[]>> ReadWriteAsync(CancellationToken ct)
@@ -195,13 +203,21 @@ namespace WebSocketting
         {
             if (_ws.State != WebSocketState.Open)
             {
-                ConditionalLog($"(DisconnectAsync) Discconnect attempt ignored as connection is already closed", 1);
+                TraceEvent(
+                    $"(DisconnectAsync) Discconnect attempt ignored as connection is already closed",
+                    EventIdentifiers.WS_VER_CONN_ALR_CLOSE,
+                    TraceEventType.Verbose
+                );
                 return;
             }
 
             _disconnecting = true;
             await ((ClientWebSocket)_ws).CloseAsync(status, description, token);
-            ConditionalLog("(DisconnectAsync) Socket disconnected", 2);
+            TraceEvent(
+                "(DisconnectAsync) Socket disconnected",
+                EventIdentifiers.WS_INF_CONN_CLOSE,
+                TraceEventType.Information
+           );
         }
 
         /// <summary>
@@ -215,13 +231,21 @@ namespace WebSocketting
             {
                 if (_ws.State != WebSocketState.Open)
                 {
-                    ConditionalLog("(ReadLoopAsync) Invalid attempt to read a closed socket", 5);
+                    TraceEvent(
+                        "(ReadLoopAsync) Invalid attempt to read a closed socket",
+                        EventIdentifiers.WS_ERR_READ_SOCK_CLOSE_ASYNC,
+                        TraceEventType.Error
+                    );
                     throw new InvalidOperationException("Websocket is not open");
                 }
 
                 if (ct.IsCancellationRequested)
                 {
-                    ConditionalLog("(ReadLoopAsync) Operation cancelled", 3);
+                    TraceEvent(
+                        "(ReadLoopAsync) Operation cancelled",
+                        EventIdentifiers.WS_WAR_CANC_READ,
+                        TraceEventType.Warning
+                    );
                     return ConnectionResult.ConnectionCancelled;
                 }
 
@@ -236,16 +260,28 @@ namespace WebSocketting
                 //We don't know how long the receive task has waited, so check for cancellation again
                 if (ct.IsCancellationRequested)
                 {
-                    ConditionalLog("(ReadLoopAsync) Operation cancelled", 3);
+                    TraceEvent(
+                        "(ReadLoopAsync) Operation cancelled",
+                        EventIdentifiers.WS_WAR_CANC_READ_ASYNC,
+                        TraceEventType.Warning
+                    );
                     return ConnectionResult.ConnectionCancelled;
                 }
 
                 if (res.MessageType == WebSocketMessageType.Close)
                 {
                     _disconnecting = true;
-                    ConditionalLog($"(ReadLoopAsync) Close request: [{res.CloseStatus}] {res.CloseStatusDescription}", 2);
+                    TraceEvent(
+                        $"(ReadLoopAsync) Close request: [{res.CloseStatus}] {res.CloseStatusDescription}",
+                        EventIdentifiers.WS_INF_CONN_CLOSE_REQ,
+                        TraceEventType.Information
+                    );
                     await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Close request acknowledged", ct);
-                    ConditionalLog("(ReadLoopAsync) Socket disconnected", 2);
+                    TraceEvent(
+                        "(ReadLoopAsync) Socket disconnected",
+                        EventIdentifiers.WS_INF_CONN_CLOSE,
+                        TraceEventType.Information
+                    );
                     return ConnectionResult.Disconnecting;
                 }
 
@@ -264,7 +300,11 @@ namespace WebSocketting
 
                 msg.AddRange(buf.Take(res.Count));
 
-                ConditionalLog($"(ReadLoopAsync) Received bytes [ len: {res.Count} ]", 0);
+                TraceEvent(
+                    $"(ReadLoopAsync) Received bytes [ len: {res.Count} ]",
+                    EventIdentifiers.WS_VER_RBYTES_ASYNC,
+                    TraceEventType.Verbose
+                );
 
                 if (res.MessageType == WebSocketMessageType.Binary)
                 {
@@ -279,11 +319,19 @@ namespace WebSocketting
 
             if (ct.IsCancellationRequested)
             {
-                ConditionalLog("(ReadLoopAsync) Operation cancelled", 3);
+                TraceEvent(
+                    "(ReadLoopAsync) Operation cancelled",
+                    EventIdentifiers.WS_WAR_CANC_READ_ASYNC,
+                    TraceEventType.Warning
+                );
                 return ConnectionResult.ConnectionCancelled;
             }
 
-            ConditionalLog("(ReadLoopAsync) Socket disconnecting", 2);
+            TraceEvent(
+                "(ReadLoopAsync) Socket disconnecting",
+                EventIdentifiers.WS_INF_CONN_CLOSE,
+                TraceEventType.Information
+            );
             return ConnectionResult.Disconnecting;
         }
 
@@ -305,7 +353,11 @@ namespace WebSocketting
 
                 if (_ws.State != WebSocketState.Open)
                 {
-                    ConditionalLog("(WriteLoopAsync) Invalid attempt to write to a closed socket", 5);
+                    TraceEvent(
+                        "(WriteLoopAsync) Invalid attempt to write to a closed socket",
+                        EventIdentifiers.WS_ERR_SEND_SOCK_CLOSE_ASYNC,
+                        TraceEventType.Error
+                    );
                     throw new InvalidOperationException("Websocket is not open");
                 }
 
@@ -314,31 +366,51 @@ namespace WebSocketting
                 if (ct.IsCancellationRequested)
                 {
                     _sem.Release();
-                    ConditionalLog("(WriteLoopAsync) Operation cancelled", 3);
+                    TraceEvent(
+                        "(WriteLoopAsync) Operation cancelled",
+                        EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
+                        TraceEventType.Warning
+                    );
                     return ConnectionResult.ConnectionCancelled;
                 }
 
                 _sQ.TryDequeue(out IEnumerable<byte> buf);
                 byte[] bufArray = buf.ToArray();
                 await _ws.SendAsync(new ArraySegment<byte>(bufArray, 0, bufArray.Length), _msgType, true, ct);
-                ConditionalLog($"(WriteLoopAsync) Sent bytes [ len: {bufArray.Length} ]", 0);
+                TraceEvent(
+                    $"(WriteLoopAsync) Sent bytes [ len: {bufArray.Length} ]",
+                    EventIdentifiers.WS_VER_SBYTES_ASYNC,
+                    TraceEventType.Verbose
+                );
 
                 _sem.Release();
 
                 if (ct.IsCancellationRequested)
                 {
-                    ConditionalLog("(WriteLoopAsync) Operation cancelled", 3);
+                    TraceEvent(
+                        "(WriteLoopAsync) Operation cancelled",
+                        EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
+                        TraceEventType.Warning
+                    );
                     return ConnectionResult.ConnectionCancelled;
                 }
             }
 
             if (ct.IsCancellationRequested)
             {
-                ConditionalLog("(WriteLoopAsync) Operation cancelled", 3);
+                TraceEvent(
+                       "(WriteLoopAsync) Operation cancelled",
+                       EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
+                       TraceEventType.Warning
+                );
                 return ConnectionResult.ConnectionCancelled;
             }
 
-            ConditionalLog("(WriteLoopAsync) Socket disconnecting", 2);
+            TraceEvent(
+                "(WriteLoopAsync) Socket disconnecting",
+                EventIdentifiers.WS_INF_CONN_CLOSE,
+                TraceEventType.Information
+            );
             return ConnectionResult.Disconnecting;
         }
     }
