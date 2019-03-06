@@ -156,7 +156,7 @@ namespace WebSocketting
             {
                 _sem.Release();
                 TraceEvent($"(SendAsync) Operation cancelled", EventIdentifiers.WS_WAR_CANC_SEND, TraceEventType.Warning);
-                return SendResult.Cancellation;
+                ct.ThrowIfCancellationRequested();
             }
 
             await _ws.SendAsync(new ArraySegment<byte>(bytes, 0, bytes.Length), _msgType, true, ct);
@@ -246,7 +246,7 @@ namespace WebSocketting
                         EventIdentifiers.WS_WAR_CANC_READ,
                         TraceEventType.Warning
                     );
-                    return ConnectionResult.ConnectionCancelled;
+                    ct.ThrowIfCancellationRequested();
                 }
 
                 await _sem.WaitAsync(ct);
@@ -265,7 +265,7 @@ namespace WebSocketting
                         EventIdentifiers.WS_WAR_CANC_READ_ASYNC,
                         TraceEventType.Warning
                     );
-                    return ConnectionResult.ConnectionCancelled;
+                    ct.ThrowIfCancellationRequested();
                 }
 
                 if (res.MessageType == WebSocketMessageType.Close)
@@ -324,7 +324,7 @@ namespace WebSocketting
                     EventIdentifiers.WS_WAR_CANC_READ_ASYNC,
                     TraceEventType.Warning
                 );
-                return ConnectionResult.ConnectionCancelled;
+                ct.ThrowIfCancellationRequested();
             }
 
             TraceEvent(
@@ -371,7 +371,7 @@ namespace WebSocketting
                         EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
                         TraceEventType.Warning
                     );
-                    return ConnectionResult.ConnectionCancelled;
+                    ct.ThrowIfCancellationRequested();
                 }
 
                 _sQ.TryDequeue(out IEnumerable<byte> buf);
@@ -392,7 +392,7 @@ namespace WebSocketting
                         EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
                         TraceEventType.Warning
                     );
-                    return ConnectionResult.ConnectionCancelled;
+                    ct.ThrowIfCancellationRequested();
                 }
             }
 
@@ -403,7 +403,7 @@ namespace WebSocketting
                        EventIdentifiers.WS_WAR_CANC_SEND_ASYNC,
                        TraceEventType.Warning
                 );
-                return ConnectionResult.ConnectionCancelled;
+                ct.ThrowIfCancellationRequested();
             }
 
             TraceEvent(
